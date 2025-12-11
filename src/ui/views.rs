@@ -1,4 +1,4 @@
 pub enum ViewTab {
-    Map,
     Table,
+    Map,
 }

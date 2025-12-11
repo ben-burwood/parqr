@@ -4,7 +4,7 @@ use eframe::egui::{
     TextWrapMode, Ui, ViewportBuilder, Window,
 };
 use egui::widgets::Label;
-use egui_extras::{Column, TableBody, TableBuilder, TableRow};
+use egui_extras::{Column, TableBuilder, TableRow};
 use polars::prelude::*;
 use rfd::FileDialog;
 use std::env;
@@ -17,18 +17,24 @@ mod ui {
 
 use crate::ui::views::ViewTab;
 
-mod plot {
-    pub mod hexagon;
-    pub mod marker;
-}
-
-use crate::plot::{hexagon::HexagonPlot, marker::PointPlot};
-
 mod df {
     pub mod filter;
 }
 
 use crate::df::filter::FilterType;
+
+mod table {
+    pub mod table;
+}
+
+use crate::table::table::render_table_body;
+
+mod map {
+    pub mod hexagon;
+    pub mod marker;
+}
+
+use crate::map::{hexagon::HexagonPlot, marker::PointPlot};
 
 struct Parqr {
     dataframe: Option<DataFrame>,
@@ -64,7 +70,7 @@ impl Parqr {
             error_message: None,
             files_loaded: false,
 
-            selected_tab: ViewTab::Map,
+            selected_tab: ViewTab::Table,
 
             filter_dialog_open: false,
             selected_filter_column: None,
@@ -426,30 +432,6 @@ impl Parqr {
         }
     }
 
-    fn render_table_body(&self, body: TableBody, df: &DataFrame, column_names: &[String]) {
-        let num_rows = df.height();
-        body.rows(20.0, num_rows, |mut row| {
-            for col_name in column_names {
-                match df.column(col_name) {
-                    Ok(column) => {
-                        let cell_text = match column.get(row.index()) {
-                            Ok(any_value) => any_value.to_string(),
-                            Err(_) => "Error".to_string(),
-                        };
-                        row.col(|ui| {
-                            ui.add(Label::new(&cell_text).wrap_mode(TextWrapMode::Extend));
-                        });
-                    }
-                    Err(_) => {
-                        row.col(|ui| {
-                            ui.add(Label::new("Col?").wrap_mode(TextWrapMode::Extend));
-                        });
-                    }
-                }
-            }
-        });
-    }
-
     fn render_table(&mut self, ui: &mut Ui) {
         if let Some(df) = &self.dataframe.clone() {
             ScrollArea::horizontal()
@@ -463,7 +445,7 @@ impl Parqr {
                             self.render_table_header(&mut header_row, &self.column_names.clone());
                         })
                         .body(|body| {
-                            self.render_table_body(body, df, &self.column_names);
+                            render_table_body(body, df, &self.column_names);
                         });
                 });
         }
@@ -489,21 +471,24 @@ impl eframe::App for Parqr {
 
             ui.horizontal(|ui| {
                 if ui
-                    .selectable_label(matches!(self.selected_tab, ViewTab::Map), "Map")
-                    .clicked()
-                {
-                    self.selected_tab = ViewTab::Map;
-                }
-                if ui
                     .selectable_label(matches!(self.selected_tab, ViewTab::Table), "Table")
                     .clicked()
                 {
                     self.selected_tab = ViewTab::Table;
                 }
+                if ui
+                    .selectable_label(matches!(self.selected_tab, ViewTab::Map), "Map")
+                    .clicked()
+                {
+                    self.selected_tab = ViewTab::Map;
+                }
             });
             ui.separator();
 
             match self.selected_tab {
+                ViewTab::Table => {
+                    self.render_table(ui);
+                }
                 ViewTab::Map => {
                     let position = self
                         .positions
@@ -516,9 +501,6 @@ impl eframe::App for Parqr {
                             .with_plugin(PointPlot::new(self.positions.clone()))
                             .with_plugin(HexagonPlot::new(self.h3cells.clone()));
                     ui.add(map);
-                }
-                ViewTab::Table => {
-                    self.render_table(ui);
                 }
             }
         });
@@ -545,7 +527,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Mapr - Parquet Mapper",
+        "Parqr - Parquet Viewer",
         options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
