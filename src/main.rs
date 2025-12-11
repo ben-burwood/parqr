@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 use eframe::egui::{
-    self, CentralPanel, Color32, ComboBox, Context, CursorIcon, RichText, ScrollArea, TextStyle,
-    TextWrapMode, Ui, ViewportBuilder, Window,
+    self, CentralPanel, Color32, Context, CursorIcon, RichText, ScrollArea, TextStyle,
+    TextWrapMode, Ui, ViewportBuilder,
 };
 use egui::widgets::Label;
 use egui_extras::{Column, TableBuilder, TableRow};
@@ -19,9 +19,10 @@ use crate::ui::views::ViewTab;
 
 mod df {
     pub mod filter;
+    pub mod sort;
 }
 
-use crate::df::filter::FilterType;
+use crate::df::{filter::FilterType, sort::SortCondition};
 
 mod table {
     pub mod table;
@@ -49,8 +50,7 @@ struct Parqr {
     filter_dialog_open: bool,
     filter_conditions: Vec<df::filter::FilterCondition>,
 
-    sort_column: Option<usize>,
-    sort_descending: bool,
+    sort_condition: Option<SortCondition>,
 
     tiles: HttpTiles,
     map_memory: MapMemory,
@@ -73,8 +73,7 @@ impl Parqr {
             filter_dialog_open: false,
             filter_conditions: Vec::new(),
 
-            sort_column: None,
-            sort_descending: false,
+            sort_condition: None,
 
             tiles: HttpTiles::new(OpenStreetMap, ctx),
             map_memory: MapMemory::default(),
@@ -177,12 +176,12 @@ impl Parqr {
     }
 
     fn apply_sort(&mut self) {
-        if let (Some(df), Some(col_idx)) = (&self.dataframe, self.sort_column) {
-            let col_name = &self.column_names[col_idx];
+        if let (Some(df), Some(sort_cond)) = (&self.dataframe, &self.sort_condition) {
+            let column = PlSmallStr::from(&sort_cond.column_name);
 
             match df.sort(
-                vec![PlSmallStr::from(col_name)],
-                SortMultipleOptions::new().with_order_descending(self.sort_descending),
+                vec![column],
+                SortMultipleOptions::new().with_order_descending(!sort_cond.ascending),
             ) {
                 Ok(sorted_df) => {
                     self.dataframe = Some(sorted_df);
@@ -425,32 +424,44 @@ impl Parqr {
     }
 
     fn render_table_header(&mut self, header_row: &mut TableRow, column_names: &[String]) {
-        for (i, col_name) in column_names.iter().enumerate() {
+        for col_name in column_names {
             header_row.col(|ui| {
+                // Determine sort indicator
+                let sort_indicator = if let Some(sort_cond) = &self.sort_condition {
+                    if &sort_cond.column_name == col_name {
+                        if sort_cond.ascending { "⬆" } else { "⬇" }
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                };
+
                 if ui
                     .add(
                         Label::new(
-                            RichText::new(&format!(
-                                "{} {}",
-                                col_name,
-                                if Some(i) == self.sort_column {
-                                    if self.sort_descending { "⬇" } else { "⬆" }
-                                } else {
-                                    ""
-                                }
-                            ))
-                            .strong(),
+                            RichText::new(format!("{} {}", col_name, sort_indicator)).strong(),
                         )
                         .wrap_mode(TextWrapMode::Extend),
                     )
                     .on_hover_cursor(CursorIcon::Default)
                     .clicked()
                 {
-                    if Some(i) == self.sort_column {
-                        self.sort_descending = !self.sort_descending;
+                    // Toggle sort or set new sort condition
+                    if let Some(sort_cond) = &mut self.sort_condition {
+                        if sort_cond.column_name == *col_name {
+                            sort_cond.ascending = !sort_cond.ascending;
+                        } else {
+                            self.sort_condition = Some(SortCondition {
+                                column_name: col_name.clone(),
+                                ascending: true,
+                            });
+                        }
                     } else {
-                        self.sort_column = Some(i);
-                        self.sort_descending = false;
+                        self.sort_condition = Some(SortCondition {
+                            column_name: col_name.clone(),
+                            ascending: true,
+                        });
                     }
                     self.apply_sort();
                 }
