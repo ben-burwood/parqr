@@ -208,17 +208,12 @@ impl Parqr {
             if self.filter_text.is_empty() {
                 self.dataframe = Some(original_df.clone());
             } else {
-                let lazy_df = original_df.clone().lazy();
-                let filter_expr = match self.filter_type {
-                    FilterType::Equals => col(col_name)
-                        .cast(DataType::String)
-                        .eq(lit(self.filter_text.clone())),
-                    FilterType::Contains => col(col_name)
-                        .cast(DataType::String)
-                        .str()
-                        .contains(lit(self.filter_text.clone()), false),
-                };
-                match lazy_df.filter(filter_expr).collect() {
+                match df::filter::filter_dataframe(
+                    original_df,
+                    col_name,
+                    self.filter_type,
+                    &self.filter_text,
+                ) {
                     Ok(filtered_df) => {
                         self.dataframe = Some(filtered_df);
                         self.error_message = None;
