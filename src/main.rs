@@ -47,9 +47,7 @@ struct Parqr {
     selected_tab: ViewTab,
 
     filter_dialog_open: bool,
-    selected_filter_column: Option<usize>,
-    filter_text: String,
-    filter_type: FilterType,
+    filter_conditions: Vec<df::filter::FilterCondition>,
 
     sort_column: Option<usize>,
     sort_descending: bool,
@@ -73,9 +71,7 @@ impl Parqr {
             selected_tab: ViewTab::Table,
 
             filter_dialog_open: false,
-            selected_filter_column: None,
-            filter_text: String::new(),
-            filter_type: FilterType::Equals,
+            filter_conditions: Vec::new(),
 
             sort_column: None,
             sort_descending: false,
@@ -111,8 +107,7 @@ impl Parqr {
                 self.original_dataframe = Some(df_with_row_index.clone());
                 self.dataframe = Some(df_with_row_index);
                 self.error_message = None;
-                self.selected_filter_column = None;
-                self.filter_text.clear();
+                self.filter_conditions = Vec::new();
 
                 self.render_map_data();
             }
@@ -200,20 +195,12 @@ impl Parqr {
     }
 
     fn apply_filter(&mut self) {
-        if let (Some(original_df), Some(col_idx)) =
-            (&self.original_dataframe, self.selected_filter_column)
-        {
-            let col_name = &self.column_names[col_idx];
-
-            if self.filter_text.is_empty() {
+        if let Some(original_df) = &self.original_dataframe {
+            if self.filter_conditions.is_empty() {
                 self.dataframe = Some(original_df.clone());
+                self.error_message = None;
             } else {
-                match df::filter::filter_dataframe(
-                    original_df,
-                    col_name,
-                    self.filter_type,
-                    &self.filter_text,
-                ) {
+                match df::filter::filter_dataframe(original_df, &self.filter_conditions) {
                     Ok(filtered_df) => {
                         self.dataframe = Some(filtered_df);
                         self.error_message = None;
@@ -225,82 +212,126 @@ impl Parqr {
                 }
             }
         }
-
         self.render_map_data();
     }
 
-    fn render_filter_dialog(&mut self, ctx: &Context) {
-        let mut open = self.filter_dialog_open;
-        Window::new("Filter")
-            .auto_sized()
-            .collapsible(false)
-            .open(&mut open)
-            .show(ctx, |ui| {
-                ui.horizontal_top(|ui| {
-                    ComboBox::from_id_salt("filter_column")
-                        .selected_text(
-                            self.selected_filter_column
-                                .map(|idx| self.column_names[idx].as_str())
-                                .unwrap_or("Select column"),
-                        )
-                        .show_ui(ui, |ui| {
-                            let column_names = self.column_names.clone();
-                            for (idx, col_name) in column_names.iter().enumerate() {
-                                if ui
-                                    .selectable_value(
-                                        &mut self.selected_filter_column,
-                                        Some(idx),
-                                        col_name,
-                                    )
-                                    .clicked()
-                                {
-                                    self.apply_filter();
-                                }
-                            }
-                        });
+    fn render_filter_dialog(&mut self, ui: &mut egui::Ui) {
+        let mut apply_filter = false;
+        let mut add_filter = false;
+        let mut remove_indices = Vec::new();
+        let filter_len = self.filter_conditions.len();
 
-                    ui.add_enabled_ui(self.selected_filter_column.is_some(), |ui| {
-                        ComboBox::from_id_salt("filter_type")
-                            .selected_text(self.filter_type.to_string())
-                            .show_ui(ui, |ui| {
-                                if ui
-                                    .selectable_value(
-                                        &mut self.filter_type,
-                                        FilterType::Equals,
-                                        FilterType::Equals.to_string(),
-                                    )
-                                    .clicked()
-                                {
-                                    self.apply_filter();
+        if self.filter_dialog_open {
+            egui::Window::new("Filter")
+                .open(&mut self.filter_dialog_open)
+                .auto_sized()
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    ui.vertical(|ui| {
+                        for (i, filter) in self.filter_conditions.iter_mut().enumerate() {
+                            ui.horizontal(|ui| {
+                                // Column dropdown
+                                let col_changed =
+                                    egui::ComboBox::from_id_salt(format!("filter_column_{}", i))
+                                        .selected_text(&filter.column_name)
+                                        .show_ui(ui, |ui| {
+                                            let mut changed = false;
+                                            for col in &self.column_names {
+                                                if ui
+                                                    .selectable_value(
+                                                        &mut filter.column_name,
+                                                        col.clone(),
+                                                        col,
+                                                    )
+                                                    .changed()
+                                                {
+                                                    changed = true;
+                                                }
+                                            }
+                                            changed
+                                        })
+                                        .inner
+                                        .unwrap_or(false);
+
+                                // Filter type dropdown
+                                let type_changed =
+                                    egui::ComboBox::from_id_salt(format!("filter_type_{}", i))
+                                        .selected_text(format!("{:?}", filter.filter_type))
+                                        .show_ui(ui, |ui| {
+                                            let mut changed = false;
+                                            if ui
+                                                .selectable_value(
+                                                    &mut filter.filter_type,
+                                                    FilterType::Contains,
+                                                    FilterType::Contains.to_string(),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                            if ui
+                                                .selectable_value(
+                                                    &mut filter.filter_type,
+                                                    FilterType::Equals,
+                                                    FilterType::Equals.to_string(),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                            changed
+                                        })
+                                        .inner
+                                        .unwrap_or(false);
+
+                                let value_changed =
+                                    ui.text_edit_singleline(&mut filter.filter_value).changed();
+
+                                if filter_len > 1 {
+                                    if ui.button("Remove").clicked() {
+                                        remove_indices.push(i);
+                                    }
                                 }
-                                if ui
-                                    .selectable_value(
-                                        &mut self.filter_type,
-                                        FilterType::Contains,
-                                        FilterType::Contains.to_string(),
-                                    )
-                                    .clicked()
-                                {
-                                    self.apply_filter();
+
+                                // If any field changed, trigger live filtering
+                                if col_changed || type_changed || value_changed {
+                                    apply_filter = true;
                                 }
                             });
-
-                        let response = ui.text_edit_singleline(&mut self.filter_text);
-                        if response.changed() {
-                            self.apply_filter();
                         }
-                        if ui.button("Clear Filter").clicked() {
-                            self.selected_filter_column = None;
-                            self.filter_text.clear();
-                            self.error_message = None;
-                            if let Some(original_df) = &self.original_dataframe {
-                                self.dataframe = Some(original_df.clone());
-                            }
+
+                        if ui.button("Add Filter").clicked() {
+                            add_filter = true;
                         }
                     });
                 });
+        }
+
+        for &i in remove_indices.iter().rev() {
+            self.filter_conditions.remove(i);
+        }
+
+        if add_filter {
+            self.filter_conditions.push(df::filter::FilterCondition {
+                column_name: self.column_names.get(0).cloned().unwrap_or_default(),
+                filter_type: df::filter::FilterType::Equals,
+                filter_value: String::new(),
             });
-        self.filter_dialog_open = open;
+            apply_filter = true;
+        }
+
+        if self.filter_conditions.is_empty() {
+            self.filter_conditions.push(df::filter::FilterCondition {
+                column_name: self.column_names.get(0).cloned().unwrap_or_default(),
+                filter_type: df::filter::FilterType::Contains,
+                filter_value: String::new(),
+            });
+            apply_filter = true;
+        }
+
+        if apply_filter {
+            self.apply_filter();
+        }
     }
 
     fn find_lat_lon_columns(&self) -> Option<(String, String)> {
@@ -457,10 +488,10 @@ impl eframe::App for Parqr {
 
         self.process_pending_files();
 
-        self.render_filter_dialog(ctx);
-
         CentralPanel::default().show(ctx, |ui| {
             self.render_file_selector(ui);
+            self.render_filter_dialog(ui);
+
             ui.separator();
             self.render_error_message(ui);
 

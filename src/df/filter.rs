@@ -16,26 +16,38 @@ impl std::fmt::Display for FilterType {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FilterCondition {
+    pub filter_type: FilterType,
+    pub column_name: String,
+    pub filter_value: String,
+}
+
 pub fn filter_dataframe(
     dataframe: &DataFrame,
-    column_name: &str,
-    filter_type: FilterType,
-    filter_value: &str,
+    filters: &[FilterCondition],
 ) -> Result<DataFrame, Box<dyn std::error::Error>> {
-    let lazy_df = dataframe.clone().lazy();
+    let mut lazy_df = dataframe.clone().lazy();
 
-    let filter_expr = match filter_type {
-        FilterType::Equals => col(column_name)
-            .cast(DataType::String)
-            .eq(lit(filter_value)),
-        FilterType::Contains => col(column_name)
-            .cast(DataType::String)
-            .str()
-            .contains(lit(filter_value), false),
-    };
+    if !filters.is_empty() {
+        let mut filter_exprs = Vec::new();
+        for filter in filters {
+            let expr = match filter.filter_type {
+                FilterType::Equals => col(&filter.column_name)
+                    .cast(DataType::String)
+                    .eq(lit(filter.filter_value.clone())),
+                FilterType::Contains => col(&filter.column_name)
+                    .cast(DataType::String)
+                    .str()
+                    .contains(lit(filter.filter_value.clone()), false),
+            };
+            filter_exprs.push(expr);
+        }
+        let combined = filter_exprs.into_iter().reduce(|a, b| a.and(b)).unwrap();
+        lazy_df = lazy_df.filter(combined);
+    }
 
     let filtered_df = lazy_df
-        .filter(filter_expr)
         .collect()
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     Ok(filtered_df)
