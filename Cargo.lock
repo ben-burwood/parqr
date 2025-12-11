@@ -3631,7 +3631,7 @@ dependencies = [
  "image",
  "polars",
  "rfd",
- "walkers",
+ "walkers 0.49.0",
  "walkers_extras",
  "winres",
 ]
@@ -6189,18 +6189,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "walkers_extras"
-version = "0.49.0"
+name = "walkers"
+version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "098138e63e8e4e90482df909f4e53a32b98998be3713dd551e3674f3afb85ec7"
+checksum = "7a443c518c081ef29fafc4c53c32c6f8cba953b019854080214cad1e6d47c297"
+dependencies = [
+ "bytes",
+ "egui",
+ "egui_extras",
+ "futures",
+ "geo-types",
+ "http-cache-reqwest",
+ "image",
+ "log",
+ "lru",
+ "reqwest",
+ "reqwest-middleware",
+ "thiserror 2.0.17",
+ "tokio",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "walkers_extras"
+version = "0.50.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd40b53e73934a4e025cf5539066375a07bfe0a56671e7ed51eba868455ebf7e"
 dependencies = [
  "egui",
  "lyon_path",
  "lyon_tessellation",
  "quick-xml 0.37.5",
  "rstar",
- "thiserror 1.0.69",
- "walkers",
+ "thiserror 2.0.17",
+ "walkers 0.50.0",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ image = "0.25.8"
 polars = { version = "0.51.0", features = ["lazy", "parquet", "dtype-full", "strings", "regex"] }
 rfd = "0.15.4"
 walkers = "0.49.0"
-walkers_extras = "0.49.0"
+walkers_extras = "0.50.0"
 
 [build-dependencies]
 winres = "0.1"
