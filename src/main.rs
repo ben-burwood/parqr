@@ -63,6 +63,7 @@ struct Parqr {
     export_file_type: ExportFileType,
     export_result: Option<String>,
     last_used_directory: Option<PathBuf>,
+    export_selected_columns: Option<Vec<String>>,
 }
 
 impl Parqr {
@@ -91,6 +92,7 @@ impl Parqr {
             export_file_type: ExportFileType::Csv,
             export_result: None,
             last_used_directory: None,
+            export_selected_columns: None,
         }
     }
 
@@ -98,6 +100,8 @@ impl Parqr {
         self.dataframe = None;
         self.original_dataframe = None;
         self.column_names.clear();
+        // Reset export columns selection when new data is loaded
+        self.export_selected_columns = None;
 
         let pl_paths: Vec<PlPath> = paths
             .into_iter()
@@ -555,39 +559,104 @@ impl Parqr {
                     });
             });
 
+            // Column multi-select
+            let mut all_columns: Vec<(String, DataType)> = Vec::new();
+            if let Some(df) = &self.dataframe {
+                all_columns = df
+                    .get_columns()
+                    .iter()
+                    .map(|s| (s.name().to_string(), s.dtype().clone()))
+                    .collect();
+            }
+            // Initialize selection if needed
+            if self.export_selected_columns.is_none() && !all_columns.is_empty() {
+                self.export_selected_columns = Some(all_columns.iter().map(|(n, _)| n.clone()).collect());
+            }
+
+            ui.separator();
+            ui.label("Columns to export:");
+            if !all_columns.is_empty() {
+                let selected = self.export_selected_columns.get_or_insert_with(|| all_columns.iter().map(|(n, _)| n.clone()).collect());
+                ui.horizontal(|ui| {
+                    if ui.button("Select All").clicked() {
+                        *selected = all_columns.iter().map(|(n, _)| n.clone()).collect();
+                    }
+                    if ui.button("Deselect All").clicked() {
+                        selected.clear();
+                    }
+                });
+                egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+                    for (col, dtype) in &all_columns {
+                        let mut checked = selected.contains(col);
+                        let label = format!("{col} ({dtype:?})");
+                        if ui.checkbox(&mut checked, label).changed() {
+                            if checked {
+                                if !selected.contains(col) {
+                                    selected.push(col.clone());
+                                }
+                            } else {
+                                selected.retain(|c| c != col);
+                            }
+                        }
+                    }
+                });
+            }
+
             // Export button
-            let can_export = self.dataframe.is_some() && self.export_file_path.is_some();
+            let can_export = self.dataframe.is_some()
+                && self.export_file_path.is_some()
+                && self.export_selected_columns.as_ref().map_or(false, |v| !v.is_empty());
             if ui
                 .add_enabled(can_export, egui::Button::new("Export"))
                 .clicked()
             {
                 self.export_result = Some(
-                    match (&self.dataframe, &self.export_file_path, &self.export_file_type) {
-                        (Some(df), Some(path), ExportFileType::Csv) => {
+                    match (&self.dataframe, &self.export_file_path, &self.export_file_type, &self.export_selected_columns) {
+                        (Some(df), Some(path), ExportFileType::Csv, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => return self.export_result = Some(format!("File error: {e}")),
                             };
-                            let mut df = df.clone();
+                            let mut df = if cols.len() == df.width() {
+                                df.clone()
+                            } else {
+                                match df.select(cols) {
+                                    Ok(sub) => sub,
+                                    Err(e) => {
+                                        self.export_result = Some(format!("Column select error: {e}"));
+                                        return;
+                                    }
+                                }
+                            };
                             let mut writer = CsvWriter::new(&mut file);
                             match writer.finish(&mut df) {
                                 Ok(_) => format!("Exported to CSV: {}", path.display()),
                                 Err(e) => format!("CSV export error: {e}"),
                             }
                         }
-                        (Some(df), Some(path), ExportFileType::Parquet) => {
+                        (Some(df), Some(path), ExportFileType::Parquet, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => return self.export_result = Some(format!("File error: {e}")),
                             };
-                            let mut df = df.clone();
+                            let mut df = if cols.len() == df.width() {
+                                df.clone()
+                            } else {
+                                match df.select(cols) {
+                                    Ok(sub) => sub,
+                                    Err(e) => {
+                                        self.export_result = Some(format!("Column select error: {e}"));
+                                        return;
+                                    }
+                                }
+                            };
                             let writer = ParquetWriter::new(&mut file);
                             match writer.finish(&mut df) {
                                 Ok(_) => format!("Exported to Parquet: {}", path.display()),
                                 Err(e) => format!("Parquet export error: {e}"),
                             }
                         }
-                        _ => "No DataFrame or file path selected.".to_string(),
+                        _ => "No DataFrame, file path, or columns selected.".to_string(),
                     }
                 );
             }
