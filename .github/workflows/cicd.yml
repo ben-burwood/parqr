@@ -35,7 +35,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Parqr-Installer.exe
-          path: target/${{ matrix.BUILD_TARGET }}//parqr_*_x64-setup.exe
+          path: target/${{ matrix.BUILD_TARGET }}/parqr_*_x64-setup.exe
 
   release:
     needs: build
@@ -66,4 +66,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload ${{ steps.set_tag.outputs.tag }} Parqr.exe/parqr.exe Parqr-Installer.exe/parqr_*_x64-setup.exe --clobber
+          gh release upload ${{ steps.set_tag.outputs.tag }} parqr.exe parqr_*_x64-setup.exe --clobber
