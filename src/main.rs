@@ -62,7 +62,6 @@ struct Parqr {
     export_file_path: Option<PathBuf>,
     export_file_type: ExportFileType,
     export_result: Option<String>,
-    last_used_directory: Option<PathBuf>,
     export_selected_columns: Option<Vec<String>>,
 }
 
@@ -91,7 +90,6 @@ impl Parqr {
             export_file_path: None,
             export_file_type: ExportFileType::Csv,
             export_result: None,
-            last_used_directory: None,
             export_selected_columns: None,
         }
     }
@@ -503,38 +501,10 @@ impl Parqr {
                 });
         }
     }
-}
 
-impl Parqr {
     fn render_export_pane(&mut self, ui: &mut Ui) {
         use crate::df::export::ExportFileType;
         ui.vertical(|ui| {
-            // File selector for export path
-            ui.horizontal(|ui| {
-                let file_label = if let Some(path) = &self.export_file_path {
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "Choose export file...".to_string())
-                } else {
-                    "Choose export file...".to_string()
-                };
-                if ui.button("Browse...").clicked() {
-                    let mut dialog = FileDialog::new();
-                    if let Some(dir) = &self.last_used_directory {
-                        dialog = dialog.set_directory(dir);
-                    }
-                    match self.export_file_type {
-                        ExportFileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
-                        ExportFileType::Parquet => dialog = dialog.add_filter("Parquet", &["parquet"]),
-                    }
-                    if let Some(path) = dialog.save_file() {
-                        self.last_used_directory = path.parent().map(|p| p.to_path_buf());
-                        self.export_file_path = Some(path);
-                    }
-                }
-                ui.label(file_label);
-            });
-
             // File type dropdown
             ui.horizontal(|ui| {
                 ui.label("File type:");
@@ -547,19 +517,38 @@ impl Parqr {
                         if ui
                             .selectable_value(&mut self.export_file_type, ExportFileType::Csv, "CSV")
                             .changed()
-                        {
-                            // Optionally update file extension
-                        }
+                        {}
                         if ui
                             .selectable_value(&mut self.export_file_type, ExportFileType::Parquet, "Parquet")
                             .changed()
-                        {
-                            // Optionally update file extension
-                        }
+                        {}
                     });
             });
 
+            // File selector for export path
+            ui.horizontal(|ui| {
+                let file_label = if let Some(path) = &self.export_file_path {
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Choose export file...".to_string())
+                } else {
+                    "Choose export file...".to_string()
+                };
+                if ui.button("Browse...").clicked() {
+                    let mut dialog = FileDialog::new();
+                    match self.export_file_type {
+                        ExportFileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
+                        ExportFileType::Parquet => dialog = dialog.add_filter("Parquet", &["parquet"]),
+                    }
+                    if let Some(path) = dialog.save_file() {
+                        self.export_file_path = Some(path);
+                    }
+                }
+                ui.label(file_label);
+            });
+
             // Column multi-select
+            ui.separator();
             let mut all_columns: Vec<(String, DataType)> = Vec::new();
             if let Some(df) = &self.dataframe {
                 all_columns = df
@@ -568,12 +557,10 @@ impl Parqr {
                     .map(|s| (s.name().to_string(), s.dtype().clone()))
                     .collect();
             }
-            // Initialize selection if needed
             if self.export_selected_columns.is_none() && !all_columns.is_empty() {
                 self.export_selected_columns = Some(all_columns.iter().map(|(n, _)| n.clone()).collect());
             }
 
-            ui.separator();
             ui.label("Columns to export:");
             if !all_columns.is_empty() {
                 let selected = self.export_selected_columns.get_or_insert_with(|| all_columns.iter().map(|(n, _)| n.clone()).collect());
@@ -602,7 +589,7 @@ impl Parqr {
                 });
             }
 
-            // Export button
+            ui.separator();
             let can_export = self.dataframe.is_some()
                 && self.export_file_path.is_some()
                 && self.export_selected_columns.as_ref().map_or(false, |v| !v.is_empty());
@@ -661,7 +648,6 @@ impl Parqr {
                 );
             }
 
-            // Export result message
             if let Some(msg) = &self.export_result {
                 ui.label(msg);
             }
