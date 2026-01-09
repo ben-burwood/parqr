@@ -5,7 +5,7 @@ edition = "2024"
 description = "Desktop GUI Parquet Table/Map"
 
 [dependencies]
-eframe = { version = "0.33.0", features = ["default"] }
+eframe = { version = "0.33.3", features = ["default"] }
 egui_extras = "0.33.0"
 h3o = "0.9.3"
 image = "0.25.8"
