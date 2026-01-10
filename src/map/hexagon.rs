@@ -14,7 +14,7 @@ impl Hexagon {
     pub fn position(&self) -> Option<Position> {
         let cell_index = CellIndex::from_str(&self.h3cell).ok()?;
         let latlng = LatLng::from(cell_index);
-        Some(Position::new(latlng.lat(), latlng.lng()))
+        Some(walkers::lat_lon(latlng.lat(), latlng.lng()))
     }
 
     // /// Returns the boundary coordinates (lat, lng) of the hexagon.

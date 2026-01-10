@@ -5,9 +5,9 @@ use eframe::egui::{
 };
 use egui::widgets::Label;
 use egui_extras::{Column, TableBuilder, TableRow};
-use polars::prelude::*;
 use polars::prelude::CsvWriter;
 use polars::prelude::ParquetWriter;
+use polars::prelude::*;
 use rfd::FileDialog;
 use std::env;
 use std::path::PathBuf;
@@ -19,9 +19,9 @@ mod ui {
 use crate::ui::views::ViewTab;
 
 mod df {
+    pub mod export;
     pub mod filter;
     pub mod sort;
-    pub mod export;
 }
 use crate::df::export::ExportFileType;
 
@@ -37,7 +37,6 @@ mod map {
     pub mod marker;
 }
 use crate::map::{hexagon::HexagonPlot, marker::PointPlot};
-
 
 struct Parqr {
     dataframe: Option<DataFrame>,
@@ -434,7 +433,7 @@ impl Parqr {
 
     fn render_map_data(&mut self) {
         self.construct_lat_lon_positions();
-        // self.construct_h3_cells();
+        self.construct_h3_cells();
     }
 
     fn render_table_header(&mut self, header_row: &mut TableRow, column_names: &[String]) {
@@ -515,11 +514,19 @@ impl Parqr {
                     })
                     .show_ui(ui, |ui| {
                         if ui
-                            .selectable_value(&mut self.export_file_type, ExportFileType::Csv, "CSV")
+                            .selectable_value(
+                                &mut self.export_file_type,
+                                ExportFileType::Csv,
+                                "CSV",
+                            )
                             .changed()
                         {}
                         if ui
-                            .selectable_value(&mut self.export_file_type, ExportFileType::Parquet, "Parquet")
+                            .selectable_value(
+                                &mut self.export_file_type,
+                                ExportFileType::Parquet,
+                                "Parquet",
+                            )
                             .changed()
                         {}
                     });
@@ -538,7 +545,9 @@ impl Parqr {
                     let mut dialog = FileDialog::new();
                     match self.export_file_type {
                         ExportFileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
-                        ExportFileType::Parquet => dialog = dialog.add_filter("Parquet", &["parquet"]),
+                        ExportFileType::Parquet => {
+                            dialog = dialog.add_filter("Parquet", &["parquet"])
+                        }
                     }
                     if let Some(path) = dialog.save_file() {
                         self.export_file_path = Some(path);
@@ -558,12 +567,15 @@ impl Parqr {
                     .collect();
             }
             if self.export_selected_columns.is_none() && !all_columns.is_empty() {
-                self.export_selected_columns = Some(all_columns.iter().map(|(n, _)| n.clone()).collect());
+                self.export_selected_columns =
+                    Some(all_columns.iter().map(|(n, _)| n.clone()).collect());
             }
 
             ui.label("Columns to export:");
             if !all_columns.is_empty() {
-                let selected = self.export_selected_columns.get_or_insert_with(|| all_columns.iter().map(|(n, _)| n.clone()).collect());
+                let selected = self
+                    .export_selected_columns
+                    .get_or_insert_with(|| all_columns.iter().map(|(n, _)| n.clone()).collect());
                 ui.horizontal(|ui| {
                     if ui.button("Select All").clicked() {
                         *selected = all_columns.iter().map(|(n, _)| n.clone()).collect();
@@ -572,37 +584,49 @@ impl Parqr {
                         selected.clear();
                     }
                 });
-                egui::ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
-                    for (col, dtype) in &all_columns {
-                        let mut checked = selected.contains(col);
-                        let label = format!("{col} ({dtype:?})");
-                        if ui.checkbox(&mut checked, label).changed() {
-                            if checked {
-                                if !selected.contains(col) {
-                                    selected.push(col.clone());
+                egui::ScrollArea::vertical()
+                    .max_height(120.0)
+                    .show(ui, |ui| {
+                        for (col, dtype) in &all_columns {
+                            let mut checked = selected.contains(col);
+                            let label = format!("{col} ({dtype:?})");
+                            if ui.checkbox(&mut checked, label).changed() {
+                                if checked {
+                                    if !selected.contains(col) {
+                                        selected.push(col.clone());
+                                    }
+                                } else {
+                                    selected.retain(|c| c != col);
                                 }
-                            } else {
-                                selected.retain(|c| c != col);
                             }
                         }
-                    }
-                });
+                    });
             }
 
             ui.separator();
             let can_export = self.dataframe.is_some()
                 && self.export_file_path.is_some()
-                && self.export_selected_columns.as_ref().map_or(false, |v| !v.is_empty());
+                && self
+                    .export_selected_columns
+                    .as_ref()
+                    .map_or(false, |v| !v.is_empty());
             if ui
                 .add_enabled(can_export, egui::Button::new("Export"))
                 .clicked()
             {
                 self.export_result = Some(
-                    match (&self.dataframe, &self.export_file_path, &self.export_file_type, &self.export_selected_columns) {
+                    match (
+                        &self.dataframe,
+                        &self.export_file_path,
+                        &self.export_file_type,
+                        &self.export_selected_columns,
+                    ) {
                         (Some(df), Some(path), ExportFileType::Csv, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
-                                Err(e) => return self.export_result = Some(format!("File error: {e}")),
+                                Err(e) => {
+                                    return self.export_result = Some(format!("File error: {e}"));
+                                }
                             };
                             let mut df = if cols.len() == df.width() {
                                 df.clone()
@@ -610,7 +634,8 @@ impl Parqr {
                                 match df.select(cols) {
                                     Ok(sub) => sub,
                                     Err(e) => {
-                                        self.export_result = Some(format!("Column select error: {e}"));
+                                        self.export_result =
+                                            Some(format!("Column select error: {e}"));
                                         return;
                                     }
                                 }
@@ -624,7 +649,9 @@ impl Parqr {
                         (Some(df), Some(path), ExportFileType::Parquet, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
-                                Err(e) => return self.export_result = Some(format!("File error: {e}")),
+                                Err(e) => {
+                                    return self.export_result = Some(format!("File error: {e}"));
+                                }
                             };
                             let mut df = if cols.len() == df.width() {
                                 df.clone()
@@ -632,7 +659,8 @@ impl Parqr {
                                 match df.select(cols) {
                                     Ok(sub) => sub,
                                     Err(e) => {
-                                        self.export_result = Some(format!("Column select error: {e}"));
+                                        self.export_result =
+                                            Some(format!("Column select error: {e}"));
                                         return;
                                     }
                                 }
@@ -644,7 +672,7 @@ impl Parqr {
                             }
                         }
                         _ => "No DataFrame, file path, or columns selected.".to_string(),
-                    }
+                    },
                 );
             }
 
