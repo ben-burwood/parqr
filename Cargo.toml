@@ -8,7 +8,7 @@ description = "Desktop GUI Parquet Table/Map"
 eframe = { version = "0.33.0", features = ["default"] }
 egui_extras = "0.33.0"
 h3o = "0.9.3"
-image = "0.25.8"
+image = "0.25.9"
 polars = { version = "0.51.0", features = ["lazy", "parquet", "dtype-full", "strings", "regex"] }
 rfd = "0.15.4"
 walkers = "0.49.0"
