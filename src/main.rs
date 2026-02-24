@@ -122,6 +122,11 @@ impl Parqr {
                 self.filter_conditions = Vec::new();
 
                 self.render_map_data();
+                
+                // If Map tab is selected but no mappable columns, switch to Table tab
+                if matches!(self.selected_tab, ViewTab::Map) && !self.has_mappable_columns() {
+                    self.selected_tab = ViewTab::Table;
+                }
             }
             Err(e) => {
                 self.dataframe = None;
@@ -436,6 +441,10 @@ impl Parqr {
         self.construct_h3_cells();
     }
 
+    fn has_mappable_columns(&self) -> bool {
+        self.find_lat_lon_columns().is_some() || self.find_h3cell_columns().is_some()
+    }
+
     fn render_table_header(&mut self, header_row: &mut TableRow, column_names: &[String]) {
         for col_name in column_names {
             header_row.col(|ui| {
@@ -707,11 +716,13 @@ impl eframe::App for Parqr {
                 {
                     self.selected_tab = ViewTab::Table;
                 }
-                if ui
-                    .selectable_label(matches!(self.selected_tab, ViewTab::Map), "Map")
-                    .clicked()
-                {
-                    self.selected_tab = ViewTab::Map;
+                if self.has_mappable_columns() {
+                    if ui
+                        .selectable_label(matches!(self.selected_tab, ViewTab::Map), "Map")
+                        .clicked()
+                    {
+                        self.selected_tab = ViewTab::Map;
+                    }
                 }
                 if ui
                     .selectable_label(matches!(self.selected_tab, ViewTab::Export), "Export")
