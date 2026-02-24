@@ -107,40 +107,21 @@ impl Parqr {
                 .and_then(FileType::from_extension)
         });
 
+        // Convert paths to pl_paths and scan_sources for both CSV and Parquet
+        let pl_paths: Vec<PlPath> = paths
+            .into_iter()
+            .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
+            .collect();
+        let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
+
         let result = match file_type {
             Some(FileType::Csv) => {
-                // For CSV files, scan each file and concatenate
-                let lazy_frames: Result<Vec<LazyFrame>, PolarsError> = paths
-                    .iter()
-                    .map(|path| {
-                        let pl_path = PlPath::Local(Arc::from(path.clone().into_boxed_path()));
-                        LazyCsvReader::new(pl_path)
-                            .finish()
-                    })
-                    .collect();
-
-                lazy_frames.and_then(|frames| {
-                    if frames.is_empty() {
-                        Err(PolarsError::NoData("No CSV files to load".into()))
-                    } else if frames.len() == 1 {
-                        frames.into_iter().next().unwrap().collect()
-                    } else {
-                        concat(frames, UnionArgs::default())
-                            .map_err(|e| PolarsError::ComputeError(
-                                format!("Failed to concatenate CSV files: {}", e).into()
-                            ))
-                            .and_then(|lf| lf.collect())
-                    }
-                })
+                LazyCsvReader::new_with_sources(scan_sources)
+                    .finish()
+                    .and_then(|lazy_frame| lazy_frame.collect())
             }
             Some(FileType::Parquet) | None => {
                 // Default to Parquet for backward compatibility
-                let pl_paths: Vec<PlPath> = paths
-                    .into_iter()
-                    .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
-                    .collect();
-                let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
-
                 LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
                     .and_then(|lazy_frame| lazy_frame.collect())
             }
