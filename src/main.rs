@@ -23,7 +23,7 @@ mod df {
     pub mod filter;
     pub mod sort;
 }
-use crate::df::export::ExportFileType;
+use crate::df::export::FileType;
 
 use crate::df::{filter::FilterType, sort::SortCondition};
 
@@ -59,7 +59,7 @@ struct Parqr {
     h3cells: Vec<String>,
 
     export_file_path: Option<PathBuf>,
-    export_file_type: ExportFileType,
+    export_file_type: FileType,
     export_result: Option<String>,
     export_selected_columns: Option<Vec<String>>,
 }
@@ -87,7 +87,7 @@ impl Parqr {
             h3cells: Vec::new(),
 
             export_file_path: None,
-            export_file_type: ExportFileType::Csv,
+            export_file_type: FileType::Csv,
             export_result: None,
             export_selected_columns: None,
         }
@@ -102,11 +102,13 @@ impl Parqr {
 
         // Determine file type from first file extension
         let file_type = paths.first().and_then(|p| {
-            p.extension().and_then(|ext| ext.to_str()).map(|s| s.to_lowercase())
+            p.extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(FileType::from_extension)
         });
 
-        let result = match file_type.as_deref() {
-            Some("csv") => {
+        let result = match file_type {
+            Some(FileType::Csv) => {
                 // For CSV files, scan each file and concatenate
                 let lazy_frames: Result<Vec<LazyFrame>, PolarsError> = paths
                     .iter()
@@ -131,7 +133,7 @@ impl Parqr {
                     }
                 })
             }
-            Some("parquet") | _ => {
+            Some(FileType::Parquet) | None => {
                 // Default to Parquet for backward compatibility
                 let pl_paths: Vec<PlPath> = paths
                     .into_iter()
@@ -538,21 +540,20 @@ impl Parqr {
     }
 
     fn render_export_pane(&mut self, ui: &mut Ui) {
-        use crate::df::export::ExportFileType;
         ui.vertical(|ui| {
             // File type dropdown
             ui.horizontal(|ui| {
                 ui.label("File type:");
                 egui::ComboBox::from_id_salt("export_file_type")
                     .selected_text(match self.export_file_type {
-                        ExportFileType::Csv => "CSV",
-                        ExportFileType::Parquet => "Parquet",
+                        FileType::Csv => "CSV",
+                        FileType::Parquet => "Parquet",
                     })
                     .show_ui(ui, |ui| {
                         if ui
                             .selectable_value(
                                 &mut self.export_file_type,
-                                ExportFileType::Csv,
+                                FileType::Csv,
                                 "CSV",
                             )
                             .changed()
@@ -560,7 +561,7 @@ impl Parqr {
                         if ui
                             .selectable_value(
                                 &mut self.export_file_type,
-                                ExportFileType::Parquet,
+                                FileType::Parquet,
                                 "Parquet",
                             )
                             .changed()
@@ -580,8 +581,8 @@ impl Parqr {
                 if ui.button("Browse...").clicked() {
                     let mut dialog = FileDialog::new();
                     match self.export_file_type {
-                        ExportFileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
-                        ExportFileType::Parquet => {
+                        FileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
+                        FileType::Parquet => {
                             dialog = dialog.add_filter("Parquet", &["parquet"])
                         }
                     }
@@ -657,7 +658,7 @@ impl Parqr {
                         &self.export_file_type,
                         &self.export_selected_columns,
                     ) {
-                        (Some(df), Some(path), ExportFileType::Csv, Some(cols)) => {
+                        (Some(df), Some(path), FileType::Csv, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => {
@@ -682,7 +683,7 @@ impl Parqr {
                                 Err(e) => format!("CSV export error: {e}"),
                             }
                         }
-                        (Some(df), Some(path), ExportFileType::Parquet, Some(cols)) => {
+                        (Some(df), Some(path), FileType::Parquet, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => {
