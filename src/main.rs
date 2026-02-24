@@ -117,18 +117,19 @@ impl Parqr {
                     })
                     .collect();
 
-                match lazy_frames {
-                    Ok(frames) if !frames.is_empty() => {
-                        let concatenated = if frames.len() == 1 {
-                            frames.into_iter().next().unwrap()
-                        } else {
-                            concat(frames, UnionArgs::default()).unwrap()
-                        };
-                        concatenated.collect()
+                lazy_frames.and_then(|frames| {
+                    if frames.is_empty() {
+                        Err(PolarsError::NoData("No CSV files to load".into()))
+                    } else if frames.len() == 1 {
+                        frames.into_iter().next().unwrap().collect()
+                    } else {
+                        concat(frames, UnionArgs::default())
+                            .map_err(|e| PolarsError::ComputeError(
+                                format!("Failed to concatenate CSV files: {}", e).into()
+                            ))
+                            .and_then(|lf| lf.collect())
                     }
-                    Ok(_) => Err(PolarsError::NoData("No CSV files to load".into())),
-                    Err(e) => Err(e),
-                }
+                })
             }
             Some("parquet") | _ => {
                 // Default to Parquet for backward compatibility
