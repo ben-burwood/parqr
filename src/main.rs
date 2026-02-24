@@ -93,22 +93,57 @@ impl Parqr {
         }
     }
 
-    fn load_parquet_data(&mut self, paths: Vec<PathBuf>) {
+    fn load_data(&mut self, paths: Vec<PathBuf>) {
         self.dataframe = None;
         self.original_dataframe = None;
         self.column_names.clear();
         // Reset export columns selection when new data is loaded
         self.export_selected_columns = None;
 
-        let pl_paths: Vec<PlPath> = paths
-            .into_iter()
-            .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
-            .collect();
-        let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
+        // Determine file type from first file extension
+        let file_type = paths.first().and_then(|p| {
+            p.extension().and_then(|ext| ext.to_str()).map(|s| s.to_lowercase())
+        });
 
-        match LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
-            .and_then(|lazy_frame| lazy_frame.collect())
-        {
+        let result = match file_type.as_deref() {
+            Some("csv") => {
+                // For CSV files, scan each file and concatenate
+                let lazy_frames: Result<Vec<LazyFrame>, PolarsError> = paths
+                    .iter()
+                    .map(|path| {
+                        let pl_path = PlPath::Local(Arc::from(path.clone().into_boxed_path()));
+                        LazyCsvReader::new(pl_path)
+                            .finish()
+                    })
+                    .collect();
+
+                match lazy_frames {
+                    Ok(frames) if !frames.is_empty() => {
+                        let concatenated = if frames.len() == 1 {
+                            frames.into_iter().next().unwrap()
+                        } else {
+                            concat(frames, UnionArgs::default()).unwrap()
+                        };
+                        concatenated.collect()
+                    }
+                    Ok(_) => Err(PolarsError::NoData("No CSV files to load".into())),
+                    Err(e) => Err(e),
+                }
+            }
+            Some("parquet") | _ => {
+                // Default to Parquet for backward compatibility
+                let pl_paths: Vec<PlPath> = paths
+                    .into_iter()
+                    .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
+                    .collect();
+                let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
+
+                LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
+                    .and_then(|lazy_frame| lazy_frame.collect())
+            }
+        };
+
+        match result {
             Ok(df) => {
                 let df_with_row_index = df.with_row_index("Row Index".into(), None).unwrap();
                 self.column_names = df_with_row_index
@@ -127,14 +162,14 @@ impl Parqr {
                 self.dataframe = None;
                 self.original_dataframe = None;
                 self.column_names.clear();
-                self.error_message = Some(format!("Error processing Parquet files: {}", e));
+                self.error_message = Some(format!("Error processing files: {}", e));
             }
         }
     }
 
     fn process_pending_files(&mut self) {
         if !self.files_loaded && !self.files_to_load.is_empty() {
-            self.load_parquet_data(self.files_to_load.clone());
+            self.load_data(self.files_to_load.clone());
             self.files_loaded = true;
         }
     }
@@ -146,7 +181,7 @@ impl Parqr {
             }
 
             if self.files_to_load.is_empty() {
-                ui.label("No Parquet files selected");
+                ui.label("No files selected");
             } else if self.files_to_load.len() == 1 {
                 ui.label(format!(
                     "Selected: {}",
@@ -168,12 +203,12 @@ impl Parqr {
 
     fn handle_browse_button_click(&mut self) {
         if let Some(paths) = FileDialog::new()
-            .add_filter("Parquet files", &["parquet"])
+            .add_filter("Data files", &["parquet", "csv"])
             .pick_files()
         {
             if paths.is_empty() {
                 self.error_message =
-                    Some("No files selected. Please select at least one Parquet file.".to_string());
+                    Some("No files selected. Please select at least one file.".to_string());
             } else {
                 self.files_to_load = paths;
                 self.files_loaded = false;
