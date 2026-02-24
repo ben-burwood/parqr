@@ -123,7 +123,9 @@ impl Parqr {
 
                 self.render_map_data();
                 
-                // If Map tab is selected but no mappable columns, switch to Table tab
+                // If Map tab is selected but no mappable columns, switch to Table tab.
+                // This handles the case where a user loads a new file without mappable columns
+                // while currently viewing the Map tab of a previous file.
                 if matches!(self.selected_tab, ViewTab::Map) && !self.has_mappable_columns() {
                     self.selected_tab = ViewTab::Table;
                 }
