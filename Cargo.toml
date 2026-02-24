@@ -2,7 +2,7 @@
 name = "parqr"
 version = "0.2.0"
 edition = "2024"
-description = "Desktop GUI Parquet Table/Map"
+description = "Desktop GUI Data Table/Map Viewer"
 
 [dependencies]
 eframe = { version = "0.33.0", features = ["default"] }
@@ -22,5 +22,5 @@ before-packaging-command = "cargo build --release"
 product-name = "Parqr"
 icons = ["assets/parqr.png"]
 [[file-associations]]
-extensions = ["parquet"]
-description = "Parquet File Viewer"
+extensions = ["parquet", "csv"]
+description = "Data File Viewer"

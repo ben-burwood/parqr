@@ -802,7 +802,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Parqr - Parquet Viewer",
+        "Parqr - Data Viewer",
         options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();

@@ -6,7 +6,7 @@ Almalgamation of 2 Standalone projects:
 
 > Originally Forked from https://github.com/lzm0/tablr
 
-A desktop GUI application for visualising Parquet files.
+A desktop GUI application for visualising Parquet and CSV files.
 
 Features:
 - Map - lat/lon Point Plotting
