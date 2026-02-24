@@ -106,8 +106,7 @@ impl Parqr {
                 .and_then(|ext| ext.to_str())
                 .and_then(FileType::from_extension)
         });
-
-        // Convert paths to pl_paths and scan_sources for both CSV and Parquet
+        
         let pl_paths: Vec<PlPath> = paths
             .into_iter()
             .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
@@ -116,13 +115,11 @@ impl Parqr {
 
         let result = match file_type {
             Some(FileType::Csv) => {
-                LazyCsvReader::new_with_sources(scan_sources)
-                    .finish()
+                LazyFrame::scan_csv(scan_sources, ScanArgsCsv::default())
                     .and_then(|lazy_frame| lazy_frame.collect())
             }
             Some(FileType::Parquet) | None => {
-                // Default to Parquet for backward compatibility
-                LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
+                LazyFrame::scan_parquet(scan_sources, ScanArgsParquet::default())
                     .and_then(|lazy_frame| lazy_frame.collect())
             }
         };
