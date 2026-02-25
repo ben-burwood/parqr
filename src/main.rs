@@ -8,6 +8,7 @@ use egui_extras::{Column, TableBuilder, TableRow};
 use polars::prelude::CsvWriter;
 use polars::prelude::ParquetWriter;
 use polars::prelude::*;
+use polars_buffer::Buffer;
 use rfd::FileDialog;
 use std::env;
 use std::path::PathBuf;
@@ -105,43 +106,44 @@ impl Parqr {
                 .and_then(FileType::from_extension)
         });
 
-        let pl_paths: Vec<PlPath> = paths
+        let pl_paths: Vec<PlRefPath> = paths
             .into_iter()
-            .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
+            .map(|pb| PlRefPath::new(Arc::<str>::from(pb.to_string_lossy().into_owned())))
             .collect();
-        let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
+        let scan_sources = ScanSources::Paths(Buffer::from_vec(pl_paths));
 
-        let result = match file_type {
-            Some(FileType::Csv) => LazyFrame::scan_csv(scan_sources, ScanArgsCsv::default())
-                .and_then(|lazy_frame| lazy_frame.collect()),
+        let scan_result: Result<LazyFrame, PolarsError> = match file_type {
+            Some(FileType::Csv) => LazyCsvReader::new_with_sources(scan_sources).finish(),
             Some(FileType::Parquet) | None => {
-                LazyFrame::scan_parquet(scan_sources, ScanArgsParquet::default())
-                    .and_then(|lazy_frame| lazy_frame.collect())
+                LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
             }
         };
 
-        match result {
-            Ok(df) => {
-                let df_with_row_index = df.with_row_index("Row Index".into(), None).unwrap();
-                self.column_names = df_with_row_index
-                    .get_column_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                self.original_dataframe = Some(df_with_row_index.clone());
-                self.dataframe = Some(df_with_row_index);
-                self.error_message = None;
-                self.filter_conditions = Vec::new();
+        let df: DataFrame = match scan_result {
+            Ok(lazy_df) => match lazy_df.with_row_index("Row Index", None).collect() {
+                Ok(df) => df,
+                Err(err) => {
+                    self.error_message = Some(err.to_string());
+                    return;
+                }
+            },
+            Err(err) => {
+                self.error_message = Some(err.to_string());
+                return;
+            }
+        };
+        self.error_message = None;
 
-                self.render_map_data();
-            }
-            Err(e) => {
-                self.dataframe = None;
-                self.original_dataframe = None;
-                self.column_names.clear();
-                self.error_message = Some(format!("Error processing files: {}", e));
-            }
-        }
+        self.column_names = df
+            .get_column_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        self.original_dataframe = Some(df.clone());
+        self.dataframe = Some(df);
+        self.filter_conditions = Vec::new();
+
+        self.render_map_data();
     }
 
     fn process_pending_files(&mut self) {
@@ -566,7 +568,7 @@ impl Parqr {
             let mut all_columns: Vec<(String, DataType)> = Vec::new();
             if let Some(df) = &self.dataframe {
                 all_columns = df
-                    .get_columns()
+                    .columns()
                     .iter()
                     .map(|s| (s.name().to_string(), s.dtype().clone()))
                     .collect();

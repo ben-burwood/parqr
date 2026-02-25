@@ -3642,6 +3642,7 @@ dependencies = [
  "h3o",
  "image",
  "polars",
+ "polars-buffer",
  "rfd",
  "walkers",
  "walkers_extras",
