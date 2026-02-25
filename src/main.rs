@@ -11,7 +11,7 @@ use polars::prelude::*;
 use rfd::FileDialog;
 use std::env;
 use std::path::PathBuf;
-use walkers::{HttpTiles, MapMemory, Position, sources::OpenStreetMap};
+use walkers::{sources::OpenStreetMap, HttpTiles, MapMemory, Position};
 
 mod ui {
     pub mod views;
@@ -19,13 +19,11 @@ mod ui {
 use crate::ui::views::ViewTab;
 
 mod df {
-    pub mod export;
+    pub mod filetype;
     pub mod filter;
     pub mod sort;
 }
-use crate::df::export::FileType;
-
-use crate::df::{filter::FilterType, sort::SortCondition};
+use crate::df::{filetype::FileType, filter::FilterType, sort::SortCondition};
 
 mod table {
     pub mod table;
@@ -106,7 +104,7 @@ impl Parqr {
                 .and_then(|ext| ext.to_str())
                 .and_then(FileType::from_extension)
         });
-        
+
         let pl_paths: Vec<PlPath> = paths
             .into_iter()
             .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
@@ -114,10 +112,8 @@ impl Parqr {
         let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
 
         let result = match file_type {
-            Some(FileType::Csv) => {
-                LazyFrame::scan_csv(scan_sources, ScanArgsCsv::default())
-                    .and_then(|lazy_frame| lazy_frame.collect())
-            }
+            Some(FileType::Csv) => LazyFrame::scan_csv(scan_sources, ScanArgsCsv::default())
+                .and_then(|lazy_frame| lazy_frame.collect()),
             Some(FileType::Parquet) | None => {
                 LazyFrame::scan_parquet(scan_sources, ScanArgsParquet::default())
                     .and_then(|lazy_frame| lazy_frame.collect())
@@ -458,7 +454,11 @@ impl Parqr {
                 // Determine sort indicator
                 let sort_indicator = if let Some(sort_cond) = &self.sort_condition {
                     if &sort_cond.column_name == col_name {
-                        if sort_cond.ascending { "⬆" } else { "⬇" }
+                        if sort_cond.ascending {
+                            "⬆"
+                        } else {
+                            "⬇"
+                        }
                     } else {
                         ""
                     }
@@ -529,11 +529,7 @@ impl Parqr {
                     })
                     .show_ui(ui, |ui| {
                         if ui
-                            .selectable_value(
-                                &mut self.export_file_type,
-                                FileType::Csv,
-                                "CSV",
-                            )
+                            .selectable_value(&mut self.export_file_type, FileType::Csv, "CSV")
                             .changed()
                         {}
                         if ui
@@ -560,9 +556,7 @@ impl Parqr {
                     let mut dialog = FileDialog::new();
                     match self.export_file_type {
                         FileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
-                        FileType::Parquet => {
-                            dialog = dialog.add_filter("Parquet", &["parquet"])
-                        }
+                        FileType::Parquet => dialog = dialog.add_filter("Parquet", &["parquet"]),
                     }
                     if let Some(path) = dialog.save_file() {
                         self.export_file_path = Some(path);
