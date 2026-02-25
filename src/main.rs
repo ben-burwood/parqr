@@ -8,6 +8,7 @@ use egui_extras::{Column, TableBuilder, TableRow};
 use polars::prelude::CsvWriter;
 use polars::prelude::ParquetWriter;
 use polars::prelude::*;
+use polars_buffer::Buffer;
 use rfd::FileDialog;
 use std::env;
 use std::path::PathBuf;
@@ -19,13 +20,11 @@ mod ui {
 use crate::ui::views::ViewTab;
 
 mod df {
-    pub mod export;
+    pub mod filetype;
     pub mod filter;
     pub mod sort;
 }
-use crate::df::export::ExportFileType;
-
-use crate::df::{filter::FilterType, sort::SortCondition};
+use crate::df::{filetype::FileType, filter::FilterType, sort::SortCondition};
 
 mod table {
     pub mod table;
@@ -59,7 +58,7 @@ struct Parqr {
     h3cells: Vec<String>,
 
     export_file_path: Option<PathBuf>,
-    export_file_type: ExportFileType,
+    export_file_type: FileType,
     export_result: Option<String>,
     export_selected_columns: Option<Vec<String>>,
 }
@@ -87,59 +86,73 @@ impl Parqr {
             h3cells: Vec::new(),
 
             export_file_path: None,
-            export_file_type: ExportFileType::Csv,
+            export_file_type: FileType::Csv,
             export_result: None,
             export_selected_columns: None,
         }
     }
 
-    fn load_parquet_data(&mut self, paths: Vec<PathBuf>) {
+    fn load_data(&mut self, paths: Vec<PathBuf>) {
         self.dataframe = None;
         self.original_dataframe = None;
         self.column_names.clear();
         // Reset export columns selection when new data is loaded
         self.export_selected_columns = None;
 
-        let pl_paths: Vec<PlPath> = paths
+        // Determine file type from first file extension
+        let file_type = paths.first().and_then(|p| {
+            p.extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(FileType::from_extension)
+        });
+
+        let pl_paths: Vec<PlRefPath> = paths
             .into_iter()
-            .map(|pb| PlPath::Local(Arc::from(pb.into_boxed_path())))
+            .map(|pb| PlRefPath::new(Arc::<str>::from(pb.to_string_lossy().into_owned())))
             .collect();
-        let scan_sources = ScanSources::Paths(Arc::from(pl_paths.into_boxed_slice()));
+        let scan_sources = ScanSources::Paths(Buffer::from_vec(pl_paths));
 
-        match LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
-            .and_then(|lazy_frame| lazy_frame.collect())
-        {
-            Ok(df) => {
-                let df_with_row_index = df.with_row_index("Row Index".into(), None).unwrap();
-                self.column_names = df_with_row_index
-                    .get_column_names()
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect();
-                self.original_dataframe = Some(df_with_row_index.clone());
-                self.dataframe = Some(df_with_row_index);
-                self.error_message = None;
-                self.filter_conditions = Vec::new();
+        let scan_result: Result<LazyFrame, PolarsError> = match file_type {
+            Some(FileType::Csv) => LazyCsvReader::new_with_sources(scan_sources).finish(),
+            Some(FileType::Parquet) | None => {
+                LazyFrame::scan_parquet_sources(scan_sources, ScanArgsParquet::default())
+            }
+        };
 
-                self.render_map_data();
-                
-                // Resrt to Table Tab if DataFrame not Mapable
-                if matches!(self.selected_tab, ViewTab::Map) && !self.has_mappable_columns() {
-                    self.selected_tab = ViewTab::Table;
+        let df: DataFrame = match scan_result {
+            Ok(lazy_df) => match lazy_df.with_row_index("Row Index", None).collect() {
+                Ok(df) => df,
+                Err(err) => {
+                    self.error_message = Some(err.to_string());
+                    return;
                 }
+            },
+            Err(err) => {
+                self.error_message = Some(err.to_string());
+                return;
             }
-            Err(e) => {
-                self.dataframe = None;
-                self.original_dataframe = None;
-                self.column_names.clear();
-                self.error_message = Some(format!("Error processing Parquet files: {}", e));
-            }
+        };
+        self.error_message = None;
+
+        self.column_names = df
+            .get_column_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        self.original_dataframe = Some(df.clone());
+        self.dataframe = Some(df);
+        self.filter_conditions = Vec::new();
+
+        // Reset to Table Tab if DataFrame not Mapable
+        if matches!(self.selected_tab, ViewTab::Map) && !self.has_mappable_columns() {
+            self.selected_tab = ViewTab::Table;
         }
+        self.render_map_data();
     }
 
     fn process_pending_files(&mut self) {
         if !self.files_loaded && !self.files_to_load.is_empty() {
-            self.load_parquet_data(self.files_to_load.clone());
+            self.load_data(self.files_to_load.clone());
             self.files_loaded = true;
         }
     }
@@ -151,7 +164,7 @@ impl Parqr {
             }
 
             if self.files_to_load.is_empty() {
-                ui.label("No Parquet files selected");
+                ui.label("No files selected");
             } else if self.files_to_load.len() == 1 {
                 ui.label(format!(
                     "Selected: {}",
@@ -173,12 +186,12 @@ impl Parqr {
 
     fn handle_browse_button_click(&mut self) {
         if let Some(paths) = FileDialog::new()
-            .add_filter("Parquet files", &["parquet"])
+            .add_filter("Data files", &["parquet", "csv"])
             .pick_files()
         {
             if paths.is_empty() {
                 self.error_message =
-                    Some("No files selected. Please select at least one Parquet file.".to_string());
+                    Some("No files selected. Please select at least one file.".to_string());
             } else {
                 self.files_to_load = paths;
                 self.files_loaded = false;
@@ -511,29 +524,24 @@ impl Parqr {
     }
 
     fn render_export_pane(&mut self, ui: &mut Ui) {
-        use crate::df::export::ExportFileType;
         ui.vertical(|ui| {
             // File type dropdown
             ui.horizontal(|ui| {
                 ui.label("File type:");
                 egui::ComboBox::from_id_salt("export_file_type")
                     .selected_text(match self.export_file_type {
-                        ExportFileType::Csv => "CSV",
-                        ExportFileType::Parquet => "Parquet",
+                        FileType::Csv => "CSV",
+                        FileType::Parquet => "Parquet",
                     })
                     .show_ui(ui, |ui| {
                         if ui
-                            .selectable_value(
-                                &mut self.export_file_type,
-                                ExportFileType::Csv,
-                                "CSV",
-                            )
+                            .selectable_value(&mut self.export_file_type, FileType::Csv, "CSV")
                             .changed()
                         {}
                         if ui
                             .selectable_value(
                                 &mut self.export_file_type,
-                                ExportFileType::Parquet,
+                                FileType::Parquet,
                                 "Parquet",
                             )
                             .changed()
@@ -553,10 +561,8 @@ impl Parqr {
                 if ui.button("Browse...").clicked() {
                     let mut dialog = FileDialog::new();
                     match self.export_file_type {
-                        ExportFileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
-                        ExportFileType::Parquet => {
-                            dialog = dialog.add_filter("Parquet", &["parquet"])
-                        }
+                        FileType::Csv => dialog = dialog.add_filter("CSV", &["csv"]),
+                        FileType::Parquet => dialog = dialog.add_filter("Parquet", &["parquet"]),
                     }
                     if let Some(path) = dialog.save_file() {
                         self.export_file_path = Some(path);
@@ -570,7 +576,7 @@ impl Parqr {
             let mut all_columns: Vec<(String, DataType)> = Vec::new();
             if let Some(df) = &self.dataframe {
                 all_columns = df
-                    .get_columns()
+                    .columns()
                     .iter()
                     .map(|s| (s.name().to_string(), s.dtype().clone()))
                     .collect();
@@ -630,7 +636,7 @@ impl Parqr {
                         &self.export_file_type,
                         &self.export_selected_columns,
                     ) {
-                        (Some(df), Some(path), ExportFileType::Csv, Some(cols)) => {
+                        (Some(df), Some(path), FileType::Csv, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => {
@@ -655,7 +661,7 @@ impl Parqr {
                                 Err(e) => format!("CSV export error: {e}"),
                             }
                         }
-                        (Some(df), Some(path), ExportFileType::Parquet, Some(cols)) => {
+                        (Some(df), Some(path), FileType::Parquet, Some(cols)) => {
                             let mut file = match std::fs::File::create(path) {
                                 Ok(f) => f,
                                 Err(e) => {
@@ -778,7 +784,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Parqr - Parquet Viewer",
+        "Parqr - Data Viewer",
         options,
         Box::new(|cc| {
             let ctx = cc.egui_ctx.clone();
