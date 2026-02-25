@@ -11,7 +11,7 @@ use polars::prelude::*;
 use rfd::FileDialog;
 use std::env;
 use std::path::PathBuf;
-use walkers::{sources::OpenStreetMap, HttpTiles, MapMemory, Position};
+use walkers::{HttpTiles, MapMemory, Position, sources::OpenStreetMap};
 
 mod ui {
     pub mod views;
@@ -454,11 +454,7 @@ impl Parqr {
                 // Determine sort indicator
                 let sort_indicator = if let Some(sort_cond) = &self.sort_condition {
                     if &sort_cond.column_name == col_name {
-                        if sort_cond.ascending {
-                            "⬆"
-                        } else {
-                            "⬇"
-                        }
+                        if sort_cond.ascending { "⬆" } else { "⬇" }
                     } else {
                         ""
                     }
