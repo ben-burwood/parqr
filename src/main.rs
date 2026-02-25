@@ -37,6 +37,9 @@ mod map {
 }
 use crate::map::{hexagon::HexagonPlot, marker::PointPlot};
 
+// Feature flag to control row index column visibility
+const SHOW_ROW_INDEX: bool = true;
+
 struct Parqr {
     dataframe: Option<DataFrame>,
     original_dataframe: Option<DataFrame>,
@@ -120,11 +123,18 @@ impl Parqr {
         };
 
         let df: DataFrame = match scan_result {
-            Ok(lazy_df) => match lazy_df.with_row_index("Row Index", None).collect() {
-                Ok(df) => df,
-                Err(err) => {
-                    self.error_message = Some(err.to_string());
-                    return;
+            Ok(lazy_df) => {
+                let lazy_df_with_index = if SHOW_ROW_INDEX {
+                    lazy_df.with_row_index("Row Index", None)
+                } else {
+                    lazy_df
+                };
+                match lazy_df_with_index.collect() {
+                    Ok(df) => df,
+                    Err(err) => {
+                        self.error_message = Some(err.to_string());
+                        return;
+                    }
                 }
             },
             Err(err) => {
