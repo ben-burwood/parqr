@@ -7,7 +7,7 @@ description = "Desktop GUI Data Table/Map Viewer"
 [dependencies]
 eframe = { version = "0.33.0", features = ["default"] }
 egui_extras = "0.33.0"
-h3o = "0.9.3"
+h3o = "0.9.4"
 image = "0.25.8"
 polars = { version = "0.53.0", features = ["lazy", "parquet", "csv", "dtype-full", "strings", "regex"] }
 polars-buffer = "0.53.0"
