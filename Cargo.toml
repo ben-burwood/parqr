@@ -13,7 +13,7 @@ polars = { version = "0.53.0", features = ["lazy", "parquet", "csv", "dtype-full
 polars-buffer = "0.53.0"
 rfd = "0.15.4"
 walkers = "0.49.0"
-walkers_extras = "0.49.0"
+walkers_extras = "0.52.0"
 
 [build-dependencies]
 winres = "0.1"
