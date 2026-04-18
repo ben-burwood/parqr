@@ -1,19 +1,19 @@
 [package]
 name = "parqr"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Desktop GUI Data Table/Map Viewer"
 
 [dependencies]
 eframe = { version = "0.33.0", features = ["default"] }
 egui_extras = "0.33.0"
-h3o = "0.9.3"
+h3o = "0.9.4"
 image = "0.25.8"
 polars = { version = "0.53.0", features = ["lazy", "parquet", "csv", "dtype-full", "strings", "regex"] }
 polars-buffer = "0.53.0"
-rfd = "0.15.4"
-walkers = "0.49.0"
-walkers_extras = "0.49.0"
+rfd = "0.17.0"
+walkers = "0.52.0"
+walkers_extras = "0.52.0"
 
 [build-dependencies]
 winres = "0.1"

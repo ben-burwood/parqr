@@ -38,7 +38,7 @@ mod map {
 use crate::map::{hexagon::HexagonPlot, marker::PointPlot};
 
 // Feature flag to control row index column visibility
-const SHOW_ROW_INDEX: bool = true;
+const SHOW_ROW_INDEX: bool = false;
 
 struct Parqr {
     dataframe: Option<DataFrame>,
@@ -136,7 +136,7 @@ impl Parqr {
                         return;
                     }
                 }
-            },
+            }
             Err(err) => {
                 self.error_message = Some(err.to_string());
                 return;
